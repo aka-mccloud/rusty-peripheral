@@ -2,7 +2,7 @@
 
 use core::{ fmt, mem, slice };
 
-use crate::{ get_peripheral, rcc };
+use crate::{ get_peripheral, rcc::rcc };
 
 use self::register::*;
 
@@ -57,11 +57,11 @@ pub fn spi6() -> &'static mut SPI {
 
 impl SPI {
     pub fn enable(&mut self) {
-        self.cr1.enable_peripheral(true)
+        self.cr1.enable_peripheral()
     }
 
     pub fn disable(&mut self) {
-        self.cr1.enable_peripheral(false)
+        self.cr1.disable_peripheral()
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -84,18 +84,23 @@ impl SPI {
 
         self.cr1.set_mode(mode);
         match bus_config {
-            BusConfiguration::FullDuplex => self.cr1.enable_bidirectional_mode(false),
-            BusConfiguration::HalfDuplex => self.cr1.enable_bidirectional_mode(true),
+            BusConfiguration::FullDuplex => self.cr1.disable_bidirectional_mode(),
+            BusConfiguration::HalfDuplex => self.cr1.enable_bidirectional_mode(),
             BusConfiguration::SimplexReceiveOnly => {
-                self.cr1.enable_bidirectional_mode(false);
-                self.cr1.enable_receive_only(true);
+                self.cr1.disable_bidirectional_mode();
+                self.cr1.enable_receive_only();
             }
         }
         self.cr1.set_baud_rate(baud_rate);
         self.cr1.set_data_frame_format(data_format);
         self.cr1.set_clock_polarity(cpol);
         self.cr1.set_clock_phase(cpha);
-        self.cr1.enable_software_slave_management(ssm);
+
+        if ssm {
+            self.cr1.enable_software_slave_management();
+        } else {
+            self.cr1.disable_software_slave_management();
+        }
 
         self.enable();
 
@@ -134,21 +139,28 @@ impl SPI {
         }
     }
 
+    #[inline]
+    pub fn write_word(&mut self, word: u16) -> Result<()> {
+        while !self.sr.tx_is_empty() {}
+        Ok(self.dr.write_data(word))
+    }
+
     pub fn write_data(&mut self, data: &[u8]) -> Result<()> {
         match self.cr1.get_data_frame_format() {
             DataFrameFormat::Format8Bit => {
                 for byte in data {
-                    while !self.sr.tx_is_empty() {}
-                    self.dr.write_data(*byte as _);
+                    self.write_word(*byte as _)?;
                 }
             }
             DataFrameFormat::Format16Bit => {
                 let data = unsafe {
-                    slice::from_raw_parts(data.as_ptr() as *const _, data.len() / mem::size_of::<u16>())
+                    slice::from_raw_parts(
+                        data.as_ptr() as *const _,
+                        data.len() / mem::size_of::<u16>()
+                    )
                 };
                 for word in data {
-                    while !self.sr.tx_is_empty() {}
-                    self.dr.write_data(*word);
+                    self.write_word(*word)?;
                 }
             }
         }
@@ -156,7 +168,33 @@ impl SPI {
         Ok(())
     }
 
+    #[inline]
+    pub fn read_word(&mut self) -> Result<u16> {
+        while !self.sr.rx_is_not_empty() {}
+        Ok(self.dr.read_data())
+    }
+
     pub fn read_data(&mut self, data: &mut [u8]) -> Result<()> {
+        match self.cr1.get_data_frame_format() {
+            DataFrameFormat::Format8Bit => {
+                for byte in data {
+                    *byte = self.read_word()? as u8;
+                }
+            }
+            DataFrameFormat::Format16Bit => {
+                let data = unsafe {
+                    slice::from_raw_parts_mut(
+                        data.as_ptr() as *mut u16,
+                        data.len() / mem::size_of::<u16>()
+                    )
+                };
+
+                for word in data {
+                    *word = self.read_word()?;
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -165,22 +203,22 @@ impl SPI {
 
         match ptr as u32 {
             0x4001_3000u32 => {
-                rcc().apb2enr.spi1_enable(true);
+                rcc().apb2enr.spi1_enable();
             }
             0x4000_3800u32 => {
-                rcc().apb1enr.spi2_enable(true);
+                rcc().apb1enr.spi2_enable();
             }
             0x4000_3c00u32 => {
-                rcc().apb1enr.spi3_enable(true);
+                rcc().apb1enr.spi3_enable();
             }
             0x4001_3400u32 => {
-                rcc().apb2enr.spi4_enable(true);
+                rcc().apb2enr.spi4_enable();
             }
             0x4001_5000u32 => {
-                rcc().apb2enr.spi5_enable(true);
+                rcc().apb2enr.spi5_enable();
             }
             0x4001_5400u32 => {
-                rcc().apb2enr.spi6_enable(true);
+                rcc().apb2enr.spi6_enable();
             }
             _ => panic!(),
         }
@@ -191,22 +229,22 @@ impl SPI {
 
         match ptr as u32 {
             0x4001_3000u32 => {
-                rcc().apb2enr.spi1_enable(false);
+                rcc().apb2enr.spi1_disable();
             }
             0x4000_3800u32 => {
-                rcc().apb1enr.spi2_enable(false);
+                rcc().apb1enr.spi2_disable();
             }
             0x4000_3c00u32 => {
-                rcc().apb1enr.spi3_enable(false);
+                rcc().apb1enr.spi3_disable();
             }
             0x4001_3400u32 => {
-                rcc().apb2enr.spi4_enable(false);
+                rcc().apb2enr.spi4_disable();
             }
             0x4001_5000u32 => {
-                rcc().apb2enr.spi5_enable(false);
+                rcc().apb2enr.spi5_disable();
             }
             0x4001_5400u32 => {
-                rcc().apb2enr.spi6_enable(false);
+                rcc().apb2enr.spi6_disable();
             }
             _ => panic!(),
         }

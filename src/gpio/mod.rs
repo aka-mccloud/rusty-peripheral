@@ -1,14 +1,18 @@
 #![allow(dead_code)]
 
-use crate::{ rcc, exti::EXTI, syscfg::SYSCFG };
+use ::register::field::RegisterField;
+
+use crate::{ exti::EXTI, rcc::rcc, syscfg::SYSCFG };
 
 use self::{ register::*, port::Port, pin::PinMask };
 
-pub mod register;
+pub use self::register::{ Mode, OutputType, Pull, Speed };
+
+mod register;
 pub mod port;
 pub mod pin;
 
-pub fn get_port(port: Port) -> GPIOPort<'static> {
+pub fn port(port: Port) -> GPIOPort<'static> {
     let addr = match port {
         Port::A => 0x4002_0000u32,
         Port::B => 0x4002_0400u32,
@@ -71,21 +75,18 @@ pub struct GPIOPort<'a> {
 
 impl<'a> GPIOPort<'a> {
     pub fn enable_clock(&self) {
-        let rcc = rcc::get_rcc();
-        let enabled = rcc.ahb1enr.gpio_get_enabled();
-        rcc.ahb1enr.gpio_enable(enabled | self.port);
+        let enabled = rcc().ahb1enr.gpio_get_enabled();
+        rcc().ahb1enr.gpio_enable(enabled | self.port);
     }
 
     pub fn disable_clock(&self) {
-        let rcc = rcc::get_rcc();
-        let enabled = rcc.ahb1enr.gpio_get_enabled();
-        rcc.ahb1enr.gpio_enable(enabled & !self.port);
+        let enabled = rcc().ahb1enr.gpio_get_enabled();
+        rcc().ahb1enr.gpio_enable(enabled & !self.port);
     }
 
     pub fn reset(&self) {
-        let rcc = rcc::get_rcc();
-        rcc.ahb1rstr.gpio_reset(self.port.into());
-        rcc.ahb1rstr.gpio_reset_clear();
+        rcc().ahb1rstr.gpio_reset(self.port.into());
+        rcc().ahb1rstr.gpio_reset_clear();
     }
 
     pub fn get_input_pins(&self) -> PinMask {
@@ -108,9 +109,7 @@ impl<'a> GPIOPort<'a> {
     pub fn toggle_pins(&mut self, pins: impl Into<PinMask>) {
         let mask = pins.into();
         let odr = self.regs.odr.get_pins();
-        let val =
-            ((PinMask::into_bits(odr & mask) as u32) << 16) |
-            (PinMask::into_bits(!odr & mask) as u32);
+        let val = ((odr & mask).into_bits() << 16) | (!odr & mask).into_bits();
         self.regs.bsrr.set(val);
     }
 
@@ -134,9 +133,9 @@ impl<'a> GPIOPort<'a> {
 
                 moder &= !mask2;
                 ospeedr &= !mask2;
-                ospeedr |= mask2 & (Speed::into_bits(ospeed) * 0x55555555u32);
+                ospeedr |= mask2 & (ospeed.into_bits() * 0x55555555u32);
                 pupdr &= !mask2;
-                pupdr |= mask2 & (Pull::into_bits(pupd) * 0x55555555u32);
+                pupdr |= mask2 & (pupd.into_bits() * 0x55555555u32);
 
                 self.regs.moder.set(moder);
                 self.regs.ospeedr.set(ospeedr);
@@ -240,113 +239,6 @@ impl<'a> GPIOPort<'a> {
 
                 self.regs.moder.set(moder);
             }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mode {
-    Input,
-    Output,
-    Alternate,
-    Analog,
-}
-
-impl Mode {
-    pub fn from_bits(val: u32) -> Self {
-        match val {
-            0b00 => Self::Input,
-            0b01 => Self::Output,
-            0b10 => Self::Alternate,
-            0b11 => Self::Analog,
-            _ => panic!(),
-        }
-    }
-
-    pub fn into_bits(val: Self) -> u32 {
-        match val {
-            Self::Input => 0b00,
-            Self::Output => 0b01,
-            Self::Alternate => 0b10,
-            Self::Analog => 0b11,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutputType {
-    PushPull,
-    OpenDrain,
-}
-
-impl OutputType {
-    pub fn from_bits(val: u32) -> Self {
-        match val {
-            0b0 => Self::PushPull,
-            0b1 => Self::OpenDrain,
-            _ => panic!(),
-        }
-    }
-
-    pub fn into_bits(val: Self) -> u32 {
-        match val {
-            Self::PushPull => 0b0,
-            Self::OpenDrain => 0b1,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Speed {
-    Low,
-    Medium,
-    High,
-    VeryHigh,
-}
-
-impl Speed {
-    pub fn from_bits(val: u32) -> Self {
-        match val {
-            0b00 => Self::Low,
-            0b01 => Self::Medium,
-            0b10 => Self::High,
-            0b11 => Self::VeryHigh,
-            _ => panic!(),
-        }
-    }
-
-    pub fn into_bits(val: Self) -> u32 {
-        match val {
-            Self::Low => 0b00,
-            Self::Medium => 0b01,
-            Self::High => 0b10,
-            Self::VeryHigh => 0b11,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Pull {
-    None,
-    Up,
-    Down,
-}
-
-impl Pull {
-    pub fn from_bits(val: u32) -> Self {
-        match val {
-            0b00 => Self::None,
-            0b01 => Self::Up,
-            0b10 => Self::Down,
-            _ => panic!(),
-        }
-    }
-
-    pub fn into_bits(val: Self) -> u32 {
-        match val {
-            Self::None => 0b00,
-            Self::Up => 0b01,
-            Self::Down => 0b10,
         }
     }
 }
@@ -460,12 +352,7 @@ mod tests {
 
         gpio.init_pins(
             Pin::PIN10 | Pin::PIN12,
-            PinConfig::Alternate(
-                6,
-                OutputType::OpenDrain,
-                Speed::VeryHigh,
-                Pull::Up
-            )
+            PinConfig::Alternate(6, OutputType::OpenDrain, Speed::VeryHigh, Pull::Up)
         );
 
         assert_eq!(gpio.regs.moder.pin10_get_mode(), Mode::Alternate);

@@ -1,6 +1,6 @@
-use register::register;
+use register::{ field::derive::RegisterField, register };
 
-use super::{ Mode, OutputType, Speed, Pull, PinMask };
+use super::PinMask;
 
 #[register(u32)]
 #[derive(Debug, Default)]
@@ -216,7 +216,7 @@ pub struct PullUpPullDownRegister {
 #[register(u32)]
 #[derive(Debug, Default)]
 pub struct InputDataRegister {
-    #[bits(16, ro, get = get_pins)]
+    #[bits(16, r, get = get_pins)]
     pub IDR: PinMask,
 
     #[bits(16)]
@@ -236,10 +236,10 @@ pub struct OutputDataRegister {
 #[register(u32)]
 #[derive(Debug, Default)]
 pub struct BitSetResetRegister {
-    #[bits(16, wo, set = set_pins)]
+    #[bits(16, w, set = set_pins)]
     pub BS: u16,
 
-    #[bits(16, wo, set = reset_pins)]
+    #[bits(16, w, set = reset_pins)]
     pub BR: u16,
 }
 
@@ -355,4 +355,33 @@ pub struct AlternateFunctionHighRegister {
 
     #[bits(4, rw, get = pin15_get_alternate_function, set = pin15_set_alternate_function)]
     pub AFRH15: u8,
+}
+
+#[derive(RegisterField, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mode {
+    Input = 0b00,
+    Output = 0b01,
+    Alternate = 0b10,
+    Analog = 0b11,
+}
+
+#[derive(RegisterField, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputType {
+    PushPull = 0b0,
+    OpenDrain = 0b1,
+}
+
+#[derive(RegisterField, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Speed {
+    Low = 0b00,
+    Medium = 0b01,
+    High = 0b10,
+    VeryHigh = 0b11,
+}
+
+#[derive(RegisterField, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pull {
+    None = 0b00,
+    Up = 0b01,
+    Down = 0b10,
 }

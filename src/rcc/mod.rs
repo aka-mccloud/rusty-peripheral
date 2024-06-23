@@ -2,9 +2,26 @@
 
 use core::cell::Cell;
 
+use crate::get_peripheral;
+
 use self::register::*;
 
-pub mod register;
+pub use register::{
+    AHBPrescaler,
+    APBPrescaler,
+    I2SClockSource,
+    MCOClockSource,
+    MCOPrescaler,
+    PLLClockSource,
+    PLLSysClockDivisionFactor,
+    RTCClockSource,
+    SAIClockSource,
+    SpreadSelect,
+    SystemClockSource,
+    TimerPrescaler,
+};
+
+mod register;
 
 pub struct RegisterBlock {
     /// Clock Control Register
@@ -101,13 +118,8 @@ pub struct RegisterBlock {
     pub dckcfgr: DedicatedClockConfigurationRegister,
 }
 
-pub fn get_rcc() -> &'static mut RegisterBlock {
-    let addr = 0x4002_3800u32;
-
-    unsafe {
-        let ptr: *mut RegisterBlock = addr as *mut RegisterBlock;
-        &mut *ptr
-    }
+pub fn rcc() -> &'static mut RegisterBlock {
+    get_peripheral(0x4002_3800u32)
 }
 
 const EXTERNAL_OSC_FREQ: core::cell::Cell<u32> = Cell::new(8_000_000u32);
@@ -180,302 +192,5 @@ impl RegisterBlock {
         };
 
         self.get_hclk_freq() / apb1_prescaler
-    }
-}
-
-pub enum SystemClockSource {
-    HSI,
-    HSE,
-    PLL,
-}
-
-impl SystemClockSource {
-    pub fn from_bits(val: u32) -> Self {
-        match val {
-            0b00 => Self::HSI,
-            0b01 => Self::HSE,
-            0b10 => Self::PLL,
-            _ => panic!(),
-        }
-    }
-
-    pub fn into_bits(val: Self) -> u32 {
-        match val {
-            Self::HSI => 0b00,
-            Self::HSE => 0b01,
-            Self::PLL => 0b10,
-        }
-    }
-}
-
-pub enum PLLClockSource {
-    HSI,
-    HSE,
-}
-
-impl PLLClockSource {
-    pub fn from_bits(val: u32) -> Self {
-        match val {
-            0b0 => Self::HSI,
-            0b1 => Self::HSE,
-            _ => panic!(),
-        }
-    }
-
-    pub fn into_bits(val: Self) -> u32 {
-        match val {
-            Self::HSI => 0b0,
-            Self::HSE => 0b1,
-        }
-    }
-}
-
-pub enum MCOClockSource {
-    HSI,
-    LSE,
-    HSE,
-    PLL,
-}
-
-impl MCOClockSource {
-    pub fn from_bits(val: u32) -> Self {
-        match val {
-            0b00 => Self::HSI,
-            0b01 => Self::LSE,
-            0b10 => Self::HSE,
-            0b11 => Self::PLL,
-            _ => panic!(),
-        }
-    }
-
-    pub fn into_bits(val: Self) -> u32 {
-        match val {
-            Self::HSI => 0b00,
-            Self::LSE => 0b01,
-            Self::HSE => 0b10,
-            Self::PLL => 0b11,
-        }
-    }
-}
-
-pub enum I2SClockSource {
-    PLLI2S,
-    External,
-}
-
-impl I2SClockSource {
-    pub fn from_bits(val: u32) -> Self {
-        match val {
-            0b0 => Self::PLLI2S,
-            0b1 => Self::External,
-            _ => panic!(),
-        }
-    }
-
-    pub fn into_bits(val: Self) -> u32 {
-        match val {
-            Self::PLLI2S => 0b0,
-            Self::External => 0b1,
-        }
-    }
-}
-
-pub enum RTCClockSource {
-    None,
-    LSE,
-    LSI,
-    HSE,
-}
-
-impl RTCClockSource {
-    pub fn from_bits(val: u32) -> Self {
-        match val {
-            0b00 => Self::None,
-            0b01 => Self::LSE,
-            0b10 => Self::LSI,
-            0b11 => Self::HSE,
-            _ => panic!(),
-        }
-    }
-
-    pub fn into_bits(val: Self) -> u32 {
-        match val {
-            Self::None => 0b00,
-            Self::LSE => 0b01,
-            Self::LSI => 0b10,
-            Self::HSE => 0b11,
-        }
-    }
-}
-
-pub enum AHBPrescaler {
-    NotDivided,
-    DividedBy2,
-    DividedBy4,
-    DividedBy8,
-    DividedBy16,
-    DividedBy64,
-    DividedBy128,
-    DividedBy256,
-    DividedBy512,
-}
-
-impl AHBPrescaler {
-    pub fn from_bits(val: u32) -> Self {
-        match val {
-            0b1000 => Self::DividedBy2,
-            0b1001 => Self::DividedBy4,
-            0b1010 => Self::DividedBy8,
-            0b1011 => Self::DividedBy16,
-            0b1100 => Self::DividedBy64,
-            0b1101 => Self::DividedBy128,
-            0b1110 => Self::DividedBy256,
-            0b1111 => Self::DividedBy512,
-            _ => Self::NotDivided,
-        }
-    }
-
-    pub fn into_bits(val: Self) -> u32 {
-        match val {
-            Self::NotDivided => 0,
-            Self::DividedBy2 => 0b1000,
-            Self::DividedBy4 => 0b1001,
-            Self::DividedBy8 => 0b1010,
-            Self::DividedBy16 => 0b1011,
-            Self::DividedBy64 => 0b1100,
-            Self::DividedBy128 => 0b1101,
-            Self::DividedBy256 => 0b1110,
-            Self::DividedBy512 => 0b1111,
-        }
-    }
-}
-
-pub enum APBPrescaler {
-    NotDivided,
-    DividedBy2,
-    DividedBy4,
-    DividedBy8,
-    DividedBy16,
-}
-
-impl APBPrescaler {
-    pub fn from_bits(val: u32) -> Self {
-        match val {
-            0b100 => Self::DividedBy2,
-            0b101 => Self::DividedBy4,
-            0b110 => Self::DividedBy8,
-            0b111 => Self::DividedBy16,
-            _ => Self::NotDivided,
-        }
-    }
-
-    pub fn into_bits(val: Self) -> u32 {
-        match val {
-            Self::NotDivided => 0,
-            Self::DividedBy2 => 0b100,
-            Self::DividedBy4 => 0b101,
-            Self::DividedBy8 => 0b110,
-            Self::DividedBy16 => 0b111,
-        }
-    }
-}
-
-pub enum MCOPrescaler {
-    NotDivided,
-    DividedBy2,
-    DividedBy3,
-    DividedBy4,
-    DividedBy5,
-}
-
-impl MCOPrescaler {
-    pub fn from_bits(val: u32) -> Self {
-        match val {
-            0b100 => Self::DividedBy2,
-            0b101 => Self::DividedBy3,
-            0b110 => Self::DividedBy4,
-            0b111 => Self::DividedBy5,
-            _ => Self::NotDivided,
-        }
-    }
-
-    pub fn into_bits(val: Self) -> u32 {
-        match val {
-            Self::NotDivided => 0,
-            Self::DividedBy2 => 0b100,
-            Self::DividedBy3 => 0b101,
-            Self::DividedBy4 => 0b110,
-            Self::DividedBy5 => 0b111,
-        }
-    }
-}
-
-pub enum SpreadSelect {
-    CenterSpread,
-    DownSpread,
-}
-
-impl SpreadSelect {
-    pub fn from_bits(val: u32) -> Self {
-        match val {
-            0b0 => Self::CenterSpread,
-            0b1 => Self::DownSpread,
-            _ => panic!(),
-        }
-    }
-
-    pub fn into_bits(val: Self) -> u32 {
-        match val {
-            Self::CenterSpread => 0b0,
-            Self::DownSpread => 0b1,
-        }
-    }
-}
-
-#[allow(non_camel_case_types)]
-pub enum SAIClockSource {
-    PLLSAI_PLLSAIDIV,
-    PLLI2S_PLLI2SDIV,
-    Alternate,
-}
-
-impl SAIClockSource {
-    pub fn from_bits(val: u32) -> Self {
-        match val {
-            0b00 => Self::PLLSAI_PLLSAIDIV,
-            0b01 => Self::PLLI2S_PLLI2SDIV,
-            0b10 => Self::Alternate,
-            _ => panic!(),
-        }
-    }
-
-    pub fn into_bits(val: Self) -> u32 {
-        match val {
-            Self::PLLSAI_PLLSAIDIV => 0b00,
-            Self::PLLI2S_PLLI2SDIV => 0b01,
-            Self::Alternate => 0b10,
-        }
-    }
-}
-
-pub enum TimerPrescaler {
-    PRE0,
-    PRE1,
-}
-
-impl TimerPrescaler {
-    pub fn from_bits(val: u32) -> Self {
-        match val {
-            0b0 => Self::PRE0,
-            0b1 => Self::PRE1,
-            _ => panic!(),
-        }
-    }
-
-    pub fn into_bits(val: Self) -> u32 {
-        match val {
-            Self::PRE0 => 0b0,
-            Self::PRE1 => 0b1,
-        }
     }
 }

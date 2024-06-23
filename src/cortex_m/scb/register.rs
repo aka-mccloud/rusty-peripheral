@@ -2,19 +2,19 @@ use register::register;
 
 #[register(u32)]
 pub(super) struct CPUIDBaseRegister {
-    #[bits(4, ro)]
+    #[bits(4, r)]
     pub(super) revision: u8,
 
-    #[bits(12, ro)]
+    #[bits(12, r)]
     pub(super) part_number: u16,
 
     #[bits(4)]
     __: u32,
 
-    #[bits(4, ro)]
+    #[bits(4, r)]
     pub(super) variant: u8,
 
-    #[bits(8, ro)]
+    #[bits(8, r)]
     pub(super) implementer: u8,
 }
 
@@ -26,28 +26,28 @@ pub(super) struct InterruptControlAndStateRegister {
     #[bits(2)]
     __: u32,
 
-    #[bits(1, ro)]
+    #[bits(1, r)]
     pub(super) return_to_base: bool,
 
-    #[bits(7, ro)]
+    #[bits(7, r)]
     pub(super) pending_vector: u16,
 
     #[bits(3)]
     __: u32,
 
-    #[bits(1, ro, get = has_pending_interrupt)]
+    #[bits(1, r, get = has_pending_interrupt)]
     pub(super) interrupt_pending_flag: bool,
 
     #[bits(2)]
     __: u32,
 
-    #[bits(1, wo, set = systick_exception_clear_pending_bit)]
+    #[bits(1, w, set = systick_exception_clear_pending_bit)]
     pub(super) PENDSTCLR: bool,
 
     #[bits(1, rw, get = systick_exception_is_pending, set = systick_exception_set_pending)]
     pub(super) PENDSTSET: bool,
 
-    #[bits(1, wo, set = pendsv_exception_clear_pending_bit)]
+    #[bits(1, w, set = pendsv_exception_clear_pending_bit)]
     pub(super) PENDSVCLR: bool,
 
     #[bits(1, rw, get = pendsv_exception_is_pending, set = pendsv_exception_set_pending)]

@@ -1,5 +1,7 @@
 use core::ops::{ BitOr, BitAnd, BitOrAssign, BitAndAssign, BitXor, BitXorAssign, Not };
 
+use register::field::RegisterField;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Port {
     A = 0b0000_0000_0000_0001,
@@ -182,14 +184,16 @@ impl PortMask {
     pub fn mask_1bit(&self) -> u32 {
         self.0 as _
     }
+}
 
+impl RegisterField for PortMask {
     #[inline]
-    pub fn from_bits(val: u32) -> Self {
+    fn from_bits(val: u32) -> Self {
         Self(val as _)
     }
 
     #[inline]
-    pub fn into_bits(val: Self) -> u32 {
-        val.0 as _
+    fn into_bits(self) -> u32 {
+        self.0 as _
     }
 }

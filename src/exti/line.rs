@@ -1,4 +1,6 @@
-use core::ops::{ Not, BitOr, BitAnd, BitOrAssign, BitAndAssign, BitXor, BitXorAssign };
+use core::ops::{ BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not };
+
+use register::field::RegisterField;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Line {
@@ -188,14 +190,16 @@ impl LineMask {
         let mask = pins.into();
         *self &= !mask;
     }
+}
 
+impl RegisterField for LineMask {
     #[inline]
-    pub fn from_bits(val: u32) -> Self {
+    fn from_bits(val: u32) -> Self {
         Self(val as _)
     }
 
     #[inline]
-    pub fn into_bits(val: Self) -> u32 {
-        val.0 as _
+    fn into_bits(self) -> u32 {
+        self.0 as _
     }
 }

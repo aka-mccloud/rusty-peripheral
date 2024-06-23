@@ -2,16 +2,17 @@
 
 use core::fmt::{ self };
 
+use ::register::field::derive::RegisterField;
+
 use crate::{
-    gpio::{ self, pin::Pin, port::Port, OutputType, PinConfig, Speed, Pull },
-    rcc,
+    get_peripheral,
+    gpio::{ self, pin::Pin, port::Port, OutputType, PinConfig, Pull, Speed },
+    rcc::rcc,
 };
 
 use self::register::*;
 
 mod register;
-
-pub use self::register::{ BusMode, SMBusType, SpeedMode };
 
 pub struct I2C {
     /// Control Register 1
@@ -45,31 +46,16 @@ pub struct I2C {
     fltr: FilterRegister,
 }
 
-pub fn get_i2c1() -> &'static mut I2C {
-    let addr = 0x4000_5400u32;
-
-    unsafe {
-        let ptr: *mut I2C = addr as *mut I2C;
-        &mut *ptr
-    }
+pub fn i2c1() -> &'static mut I2C {
+    get_peripheral(0x4000_5400u32)
 }
 
-pub fn get_i2c2() -> &'static mut I2C {
-    let addr = 0x4000_5800u32;
-
-    unsafe {
-        let ptr: *mut I2C = addr as *mut I2C;
-        &mut *ptr
-    }
+pub fn i2c2() -> &'static mut I2C {
+    get_peripheral(0x4000_5800u32)
 }
 
-pub fn get_i2c3() -> &'static mut I2C {
-    let addr = 0x4000_5c00u32;
-
-    unsafe {
-        let ptr: *mut I2C = addr as *mut I2C;
-        &mut *ptr
-    }
+pub fn i2c3() -> &'static mut I2C {
+    get_peripheral(0x4000_5c00u32)
 }
 
 #[derive(Debug)]
@@ -91,11 +77,11 @@ impl fmt::Display for Error {
 
 impl I2C {
     pub fn enable(&mut self) {
-        self.cr1.enable_peripheral(true)
+        self.cr1.enable_peripheral()
     }
 
     pub fn disable(&mut self) {
-        self.cr1.enable_peripheral(false)
+        self.cr1.disable_peripheral()
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -110,24 +96,8 @@ impl I2C {
         scl_pin: (Port, Pin),
         sda_pin: (Port, Pin)
     ) -> Result<(), Error> {
-        let rcc = rcc::get_rcc();
-        let ptr = self as *const I2C;
-
-        match ptr as u32 {
-            0x4000_5400u32 => {
-                rcc.apb1enr.i2c1_enable(true);
-            }
-            0x4000_5800u32 => {
-                rcc.apb1enr.i2c2_enable(true);
-            }
-            0x4000_5c00u32 => {
-                rcc.apb1enr.i2c3_enable(true);
-            }
-            _ => panic!(),
-        }
-
-        let mut gpio_scl = gpio::get_port(scl_pin.0);
-        let mut gpio_sda = gpio::get_port(sda_pin.0);
+        let mut gpio_scl = gpio::port(scl_pin.0);
+        let mut gpio_sda = gpio::port(sda_pin.0);
 
         gpio_scl.enable_clock();
         gpio_sda.enable_clock();
@@ -141,6 +111,8 @@ impl I2C {
             PinConfig::Alternate(4, OutputType::OpenDrain, Speed::VeryHigh, Pull::None)
         );
 
+        self.enable_peripheral_clock();
+
         self.disable();
 
         if scl_freq > 100_000 && speed_mode == SpeedMode::StandardMode {
@@ -152,7 +124,7 @@ impl I2C {
         }
 
         // calculate CCR
-        let f_pclk1 = rcc.get_pclk1_freq();
+        let f_pclk1 = rcc().get_pclk1_freq();
 
         let (ccr, trise) = match speed_mode {
             SpeedMode::StandardMode => (f_pclk1 / scl_freq / 2, f_pclk1 / 1_000_000 + 1),
@@ -173,7 +145,7 @@ impl I2C {
             I2CMode::Slave { addr1, addr2 } => {
                 self.oar1.set_address(addr1 << 1);
                 if let Some(addr2) = addr2 {
-                    self.oar2.enable_dual_addressing_mode(true);
+                    self.oar2.enable_dual_addressing_mode();
                     self.oar2.set_address(addr2);
                 }
             }
@@ -184,22 +156,55 @@ impl I2C {
         Ok(())
     }
 
-    pub fn reset(&self) {
-        let ptr: *const I2C = self as *const I2C;
-        let addr = ptr as u32;
+    fn enable_peripheral_clock(&self) {
+        let ptr = self as *const Self;
 
-        match addr {
+        match ptr as u32 {
             0x4000_5400u32 => {
-                rcc::get_rcc().apb1rstr.i2c1_reset(true);
-                rcc::get_rcc().apb1rstr.i2c1_reset(false);
+                rcc().apb1enr.i2c1_enable();
             }
             0x4000_5800u32 => {
-                rcc::get_rcc().apb1rstr.i2c2_reset(true);
-                rcc::get_rcc().apb1rstr.i2c2_reset(false);
+                rcc().apb1enr.i2c2_enable();
             }
             0x4000_5c00u32 => {
-                rcc::get_rcc().apb1rstr.i2c3_reset(true);
-                rcc::get_rcc().apb1rstr.i2c3_reset(false);
+                rcc().apb1enr.i2c3_enable();
+            }
+            _ => panic!(),
+        }
+    }
+
+    fn disable_peripheral_clock(&self) {
+        let ptr = self as *const Self;
+
+        match ptr as u32 {
+            0x4000_5400u32 => {
+                rcc().apb1enr.i2c1_disable();
+            }
+            0x4000_5800u32 => {
+                rcc().apb1enr.i2c2_disable();
+            }
+            0x4000_5c00u32 => {
+                rcc().apb1enr.i2c3_disable();
+            }
+            _ => panic!(),
+        }
+    }
+
+    pub fn reset(&self) {
+        let ptr: *const I2C = self as *const I2C;
+
+        match ptr as u32 {
+            0x4000_5400u32 => {
+                rcc().apb1rstr.i2c1_reset(true);
+                rcc().apb1rstr.i2c1_reset(false);
+            }
+            0x4000_5800u32 => {
+                rcc().apb1rstr.i2c2_reset(true);
+                rcc().apb1rstr.i2c2_reset(false);
+            }
+            0x4000_5c00u32 => {
+                rcc().apb1rstr.i2c3_reset(true);
+                rcc().apb1rstr.i2c3_reset(false);
             }
             _ => panic!(),
         }
@@ -210,7 +215,7 @@ impl I2C {
         while self.sr2.bus_is_busy() {}
 
         // Generate START condition
-        self.cr1.generate_start_condition(true);
+        self.cr1.generate_start_condition();
         while !(self.sr1.start_condition_is_generated() || self.sr1.is_bus_error_detected()) {}
         if self.sr1.is_bus_error_detected() {
             return Err(Error::BusError("Misplaced Start condition"));
@@ -239,7 +244,7 @@ impl I2C {
 
     #[inline]
     pub fn master_read_byte(&mut self) -> Result<u8, Error> {
-        while !self.sr1.rx_not_empty() {}
+        while !self.sr1.rx_is_not_empty() {}
         Ok(self.dr.read_byte())
     }
 
@@ -266,7 +271,7 @@ impl I2C {
         while !self.sr1.data_transfer_is_finished() {}
 
         // Send STOP condition
-        self.cr1.generate_stop_condition(true);
+        self.cr1.generate_stop_condition();
 
         Ok(())
     }
@@ -275,9 +280,7 @@ impl I2C {
         self.master_start()?;
         self.master_write_address(addr, false)?;
         self.master_write_bytes(data)?;
-        self.master_stop()?;
-
-        Ok(())
+        self.master_stop()
     }
 
     #[inline]
@@ -294,7 +297,7 @@ impl I2C {
         }
 
         if len == 1 {
-            self.cr1.generate_stop_condition(true);
+            self.cr1.generate_stop_condition();
 
             data[0] = self.master_read_byte()?;
         } else {
@@ -303,7 +306,7 @@ impl I2C {
             }
 
             self.cr1.set_ack(false);
-            self.cr1.generate_stop_condition(true);
+            self.cr1.generate_stop_condition();
 
             for byte in &mut data[len - 2..] {
                 *byte = self.master_read_byte()?;
@@ -318,9 +321,27 @@ impl I2C {
     pub fn master_read_data(&mut self, addr: u8, data: &mut [u8]) -> Result<(), Error> {
         self.master_start()?;
         self.master_write_address(addr, true)?;
-
         self.master_read_bytes(data)
     }
+}
+
+#[derive(RegisterField, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BusMode {
+    I2C = 0b0,
+    SMBus = 0b1,
+}
+
+#[derive(RegisterField, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SMBusType {
+    Device = 0b0,
+    Host = 0b1,
+}
+
+#[derive(RegisterField, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpeedMode {
+    StandardMode = 0b00,
+    FastModeDuty2 = 0b10,
+    FastModeDuty16_9 = 0b11,
 }
 
 pub enum I2CMode {

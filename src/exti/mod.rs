@@ -1,13 +1,6 @@
-use self::{register::{
-    InterruptMaskRegister,
-    EventMaskRegister,
-    RisingTriggerSelectionRegister,
-    FallingTriggerSelectionRegister,
-    SoftwareInterruptEventRegister,
-    PendingRegister,
-}, line::LineMask};
+use self::{ register::*, line::LineMask };
 
-pub mod register;
+mod register;
 pub mod line;
 
 pub struct EXTI {
@@ -32,7 +25,7 @@ pub struct EXTI {
 
 impl EXTI {
     pub fn get() -> &'static mut Self {
-        let addr = 0x4001_3C00u32;
+        let addr = 0x4001_3c00u32;
 
         unsafe {
             let ptr: *mut Self = addr as *mut Self;

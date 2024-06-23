@@ -1,5 +1,7 @@
 use core::ops::{ BitOr, BitAnd, BitOrAssign, BitAndAssign, BitXor, BitXorAssign, Not };
 
+use register::field::RegisterField;
+
 use crate::exti::line::LineMask;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -236,14 +238,16 @@ impl PinMask {
 
         (mask4h, mask4l)
     }
+}
 
+impl RegisterField for PinMask {
     #[inline]
-    pub fn from_bits(val: u32) -> Self {
+    fn from_bits(val: u32) -> Self {
         Self(val as _)
     }
 
     #[inline]
-    pub fn into_bits(val: Self) -> u32 {
-        val.0 as _
+    fn into_bits(self) -> u32 {
+        self.0 as _
     }
 }
