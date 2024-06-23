@@ -2,11 +2,14 @@
 
 use core::{ fmt, mem, slice };
 
-use crate::{ get_peripheral, rcc::rcc };
+use irq::{state_mut, Status};
+
+use crate::{ get_peripheral, rcc::rcc, PeripheralClock };
 
 use self::register::*;
 
 mod register;
+mod irq;
 
 pub struct SPI {
     /// Control Register 1
@@ -29,30 +32,6 @@ pub struct SPI {
 
     /// TX CRC Register
     txcrcr: CRCRegister,
-}
-
-pub fn spi1() -> &'static mut SPI {
-    get_peripheral(0x4001_3000u32)
-}
-
-pub fn spi2() -> &'static mut SPI {
-    get_peripheral(0x4000_3800u32)
-}
-
-pub fn spi3() -> &'static mut SPI {
-    get_peripheral(0x4000_3c00u32)
-}
-
-pub fn spi4() -> &'static mut SPI {
-    get_peripheral(0x4001_3400u32)
-}
-
-pub fn spi5() -> &'static mut SPI {
-    get_peripheral(0x4001_5000u32)
-}
-
-pub fn spi6() -> &'static mut SPI {
-    get_peripheral(0x4001_5400u32)
 }
 
 impl SPI {
@@ -78,8 +57,6 @@ impl SPI {
         cpha: ClockPhase,
         ssm: bool
     ) -> Result<()> {
-        self.enable_peripheral_clock();
-
         self.disable();
 
         self.cr1.set_mode(mode);
@@ -107,38 +84,6 @@ impl SPI {
         Ok(())
     }
 
-    pub fn reset(&self) {
-        let ptr = self as *const Self;
-
-        match ptr as u32 {
-            0x4001_3000u32 => {
-                rcc().apb2rstr.spi1_reset(true);
-                rcc().apb2rstr.spi1_reset(false);
-            }
-            0x4000_3800u32 => {
-                rcc().apb1rstr.spi2_reset(true);
-                rcc().apb1rstr.spi2_reset(false);
-            }
-            0x4000_3c00u32 => {
-                rcc().apb1rstr.spi3_reset(true);
-                rcc().apb1rstr.spi3_reset(false);
-            }
-            0x4001_3400u32 => {
-                rcc().apb2rstr.spi4_reset(true);
-                rcc().apb2rstr.spi4_reset(false);
-            }
-            0x4001_5000u32 => {
-                rcc().apb2rstr.spi5_reset(true);
-                rcc().apb2rstr.spi5_reset(false);
-            }
-            0x4001_5400u32 => {
-                rcc().apb2rstr.spi6_reset(true);
-                rcc().apb2rstr.spi6_reset(false);
-            }
-            _ => panic!(),
-        }
-    }
-
     #[inline]
     pub fn write_word(&mut self, word: u16) -> Result<()> {
         while !self.sr.tx_is_empty() {}
@@ -164,6 +109,24 @@ impl SPI {
                 }
             }
         }
+
+        Ok(())
+    }
+
+    pub fn write_data_begin(&mut self, data: &[u8]) -> Result<()> {
+        unsafe {
+            let state = state_mut(&self);
+            match state.status {
+                Status::Ready => Ok(()),
+                Status::BusyRx => Err(Error::BusyError("RX in progress")),
+                Status::BusyTx => Err(Error::BusyError("TX in progress")),
+            }?;
+
+            state.tx_buf = (data.as_ptr(), data.len());
+            state.status = Status::BusyTx;
+        }
+
+        self.cr2.enable_tx_empty_interrupt();
 
         Ok(())
     }
@@ -198,7 +161,59 @@ impl SPI {
         Ok(())
     }
 
-    fn enable_peripheral_clock(&self) {
+    pub fn read_data_begin(&mut self, data: &mut [u8]) -> Result<()> {
+        unsafe {
+            let state = state_mut(&self);
+            match state.status {
+                Status::Ready => Ok(()),
+                Status::BusyRx => Err(Error::BusyError("RX in progress")),
+                Status::BusyTx => Err(Error::BusyError("TX in progress")),
+            }?;
+            
+            state.rx_buf = (data.as_mut_ptr(), data.len());
+            state.status = Status::BusyRx;
+        }
+
+        self.cr2.enable_rx_not_empty_interrupt();
+
+        Ok(())
+    }
+}
+
+impl PeripheralClock for SPI {
+    fn reset(&self) {
+        let ptr = self as *const Self;
+
+        match ptr as u32 {
+            0x4001_3000u32 => {
+                rcc().apb2rstr.spi1_reset(true);
+                rcc().apb2rstr.spi1_reset(false);
+            }
+            0x4000_3800u32 => {
+                rcc().apb1rstr.spi2_reset(true);
+                rcc().apb1rstr.spi2_reset(false);
+            }
+            0x4000_3c00u32 => {
+                rcc().apb1rstr.spi3_reset(true);
+                rcc().apb1rstr.spi3_reset(false);
+            }
+            0x4001_3400u32 => {
+                rcc().apb2rstr.spi4_reset(true);
+                rcc().apb2rstr.spi4_reset(false);
+            }
+            0x4001_5000u32 => {
+                rcc().apb2rstr.spi5_reset(true);
+                rcc().apb2rstr.spi5_reset(false);
+            }
+            0x4001_5400u32 => {
+                rcc().apb2rstr.spi6_reset(true);
+                rcc().apb2rstr.spi6_reset(false);
+            }
+            _ => panic!(),
+        }
+    }
+
+    fn enable_clock(&self) {
         let ptr = self as *const Self;
 
         match ptr as u32 {
@@ -224,7 +239,7 @@ impl SPI {
         }
     }
 
-    fn disable_peripheral_clock(&self) {
+    fn disable_clock(&self) {
         let ptr = self as *const Self;
 
         match ptr as u32 {
@@ -261,6 +276,7 @@ pub enum BusConfiguration {
 pub enum Error {
     InitError(&'static str),
     BusError(&'static str),
+    BusyError(&'static str),
 }
 
 impl fmt::Display for Error {
@@ -268,8 +284,33 @@ impl fmt::Display for Error {
         match self {
             Error::InitError(e) => f.write_fmt(format_args!("InitError: {}", e)),
             Error::BusError(e) => f.write_fmt(format_args!("BusError: {}", e)),
+            Error::BusyError(e) => f.write_fmt(format_args!("BusyError: {}", e)),
         }
     }
 }
 
 pub type Result<T> = core::result::Result<T, Error>;
+
+pub fn spi1() -> &'static mut SPI {
+    get_peripheral(0x4001_3000u32)
+}
+
+pub fn spi2() -> &'static mut SPI {
+    get_peripheral(0x4000_3800u32)
+}
+
+pub fn spi3() -> &'static mut SPI {
+    get_peripheral(0x4000_3c00u32)
+}
+
+pub fn spi4() -> &'static mut SPI {
+    get_peripheral(0x4001_3400u32)
+}
+
+pub fn spi5() -> &'static mut SPI {
+    get_peripheral(0x4001_5000u32)
+}
+
+pub fn spi6() -> &'static mut SPI {
+    get_peripheral(0x4001_5400u32)
+}
