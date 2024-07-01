@@ -4,12 +4,7 @@ use core::fmt::{ self };
 
 use ::register::field::derive::RegisterField;
 
-use crate::{
-    peripheral,
-    gpio::{ self, pin::Pin, port::Port, OutputType, PinConfig, Pull, Speed },
-    rcc::rcc,
-    PeripheralClock,
-};
+use crate::{ peripheral, rcc::rcc, PeripheralClock };
 
 use self::register::*;
 
@@ -79,29 +74,7 @@ impl I2C {
         self.cr1.peripheral_is_enabled()
     }
 
-    pub fn init(
-        &mut self,
-        mode: I2CMode,
-        speed_mode: SpeedMode,
-        scl_freq: u32,
-        scl_pin: (Port, Pin),
-        sda_pin: (Port, Pin)
-    ) -> Result<()> {
-        let mut gpio_scl = gpio::port(scl_pin.0);
-        let mut gpio_sda = gpio::port(sda_pin.0);
-
-        gpio_scl.enable_clock();
-        gpio_sda.enable_clock();
-
-        gpio_scl.init_pins(
-            scl_pin.1,
-            PinConfig::Alternate(4, OutputType::OpenDrain, Speed::VeryHigh, Pull::None)
-        );
-        gpio_sda.init_pins(
-            sda_pin.1,
-            PinConfig::Alternate(4, OutputType::OpenDrain, Speed::VeryHigh, Pull::None)
-        );
-
+    pub fn init(&mut self, mode: I2CMode, speed_mode: SpeedMode, scl_freq: u32) -> Result<()> {
         self.disable();
 
         if scl_freq > 100_000 && speed_mode == SpeedMode::StandardMode {
