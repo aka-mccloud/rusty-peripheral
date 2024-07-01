@@ -9,6 +9,13 @@ pub mod exti;
 pub mod gpio;
 pub mod i2c;
 pub mod spi;
+pub mod usart;
+
+pub trait PeripheralClock {
+    fn reset(&self);
+    fn enable_clock(&self);
+    fn disable_clock(&self);
+}
 
 #[derive(RegisterField, Debug, PartialEq)]
 pub enum State {
@@ -16,9 +23,10 @@ pub enum State {
     ON,
 }
 
-pub(crate) fn get_peripheral<T>(addr: u32) -> &'static mut T {
+#[inline(always)]
+pub(crate) fn peripheral<T>(addr: usize) -> &'static mut T {
     unsafe {
-        let ptr: *mut T = addr as *mut T;
+        let ptr = addr as *mut T;
         &mut *ptr
     }
 }

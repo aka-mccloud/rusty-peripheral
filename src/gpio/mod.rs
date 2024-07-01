@@ -2,7 +2,7 @@
 
 use ::register::field::RegisterField;
 
-use crate::{ exti::EXTI, rcc::rcc, syscfg::SYSCFG };
+use crate::{ exti::EXTI, peripheral, rcc::rcc, syscfg::SYSCFG, PeripheralClock };
 
 use self::{ register::*, port::Port, pin::PinMask };
 
@@ -14,25 +14,20 @@ pub mod pin;
 
 pub fn port(port: Port) -> GPIOPort<'static> {
     let addr = match port {
-        Port::A => 0x4002_0000u32,
-        Port::B => 0x4002_0400u32,
-        Port::C => 0x4002_0800u32,
-        Port::D => 0x4002_0c00u32,
-        Port::E => 0x4002_1000u32,
-        Port::F => 0x4002_1400u32,
-        Port::G => 0x4002_1800u32,
-        Port::H => 0x4002_1c00u32,
-        Port::I => 0x4002_2000u32,
-        Port::J => 0x4002_2400u32,
-        Port::K => 0x4002_2800u32,
+        Port::A => 0x4002_0000,
+        Port::B => 0x4002_0400,
+        Port::C => 0x4002_0800,
+        Port::D => 0x4002_0c00,
+        Port::E => 0x4002_1000,
+        Port::F => 0x4002_1400,
+        Port::G => 0x4002_1800,
+        Port::H => 0x4002_1c00,
+        Port::I => 0x4002_2000,
+        Port::J => 0x4002_2400,
+        Port::K => 0x4002_2800,
     };
 
-    let p = unsafe {
-        let ptr: *mut GPIO = addr as *mut GPIO;
-        &mut *ptr
-    };
-
-    GPIOPort { regs: p, port }
+    GPIOPort { regs: peripheral(addr), port }
 }
 
 #[derive(Debug, Default)]
@@ -74,21 +69,6 @@ pub struct GPIOPort<'a> {
 }
 
 impl<'a> GPIOPort<'a> {
-    pub fn enable_clock(&self) {
-        let enabled = rcc().ahb1enr.gpio_get_enabled();
-        rcc().ahb1enr.gpio_enable(enabled | self.port);
-    }
-
-    pub fn disable_clock(&self) {
-        let enabled = rcc().ahb1enr.gpio_get_enabled();
-        rcc().ahb1enr.gpio_enable(enabled & !self.port);
-    }
-
-    pub fn reset(&self) {
-        rcc().ahb1rstr.gpio_reset(self.port.into());
-        rcc().ahb1rstr.gpio_reset_clear();
-    }
-
     pub fn get_input_pins(&self) -> PinMask {
         self.regs.idr.get_pins()
     }
@@ -240,6 +220,23 @@ impl<'a> GPIOPort<'a> {
                 self.regs.moder.set(moder);
             }
         }
+    }
+}
+
+impl<'a> PeripheralClock for GPIOPort<'a> {
+    fn reset(&self) {
+        rcc().ahb1rstr.gpio_reset(self.port.into());
+        rcc().ahb1rstr.gpio_reset_clear();
+    }
+
+    fn enable_clock(&self) {
+        let enabled = rcc().ahb1enr.gpio_get_enabled();
+        rcc().ahb1enr.gpio_enable(enabled | self.port);
+    }
+
+    fn disable_clock(&self) {
+        let enabled = rcc().ahb1enr.gpio_get_enabled();
+        rcc().ahb1enr.gpio_enable(enabled & !self.port);
     }
 }
 

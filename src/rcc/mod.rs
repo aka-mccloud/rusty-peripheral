@@ -2,7 +2,7 @@
 
 use core::cell::Cell;
 
-use crate::get_peripheral;
+use crate::peripheral;
 
 use self::register::*;
 
@@ -23,7 +23,7 @@ pub use register::{
 
 mod register;
 
-pub struct RegisterBlock {
+pub struct RCC {
     /// Clock Control Register
     pub cr: ClockControlRegister,
 
@@ -118,8 +118,8 @@ pub struct RegisterBlock {
     pub dckcfgr: DedicatedClockConfigurationRegister,
 }
 
-pub fn rcc() -> &'static mut RegisterBlock {
-    get_peripheral(0x4002_3800u32)
+pub fn rcc() -> &'static mut RCC {
+    peripheral(0x4002_3800)
 }
 
 const EXTERNAL_OSC_FREQ: core::cell::Cell<u32> = Cell::new(8_000_000u32);
@@ -128,24 +128,24 @@ pub fn set_external_osc_freq(freq: u32) {
     EXTERNAL_OSC_FREQ.set(freq);
 }
 
-impl RegisterBlock {
+impl RCC {
     #[inline]
-    pub fn get_sysclock_clock_source(&self) -> SystemClockSource {
+    pub fn sysclock_clock_source(&self) -> SystemClockSource {
         self.cfgr.sysclock_get_used_clock_source()
     }
 
     #[inline]
-    pub fn get_pll_clock_source(&self) -> PLLClockSource {
+    pub fn pll_clock_source(&self) -> PLLClockSource {
         self.pllcfgr.pll_get_clock_source()
     }
 
     #[inline]
-    pub fn get_sysclk_freq(&self) -> u32 {
-        match self.get_sysclock_clock_source() {
+    pub fn sysclk_freq(&self) -> u32 {
+        match self.sysclock_clock_source() {
             SystemClockSource::HSI => 16_000_000u32,
             SystemClockSource::HSE => EXTERNAL_OSC_FREQ.get(),
             SystemClockSource::PLL => {
-                let freq = match self.get_pll_clock_source() {
+                let freq = match self.pll_clock_source() {
                     PLLClockSource::HSI => 16_000_000u32,
                     PLLClockSource::HSE => EXTERNAL_OSC_FREQ.get(),
                 };
@@ -165,7 +165,7 @@ impl RegisterBlock {
     }
 
     #[inline]
-    pub fn get_hclk_freq(&self) -> u32 {
+    pub fn hclk_freq(&self) -> u32 {
         let ahb_prescaler = match self.cfgr.ahb_get_prescaler() {
             AHBPrescaler::NotDivided => 1,
             AHBPrescaler::DividedBy2 => 2,
@@ -178,11 +178,11 @@ impl RegisterBlock {
             AHBPrescaler::DividedBy512 => 512,
         };
 
-        self.get_sysclk_freq() / ahb_prescaler
+        self.sysclk_freq() / ahb_prescaler
     }
 
     #[inline]
-    pub fn get_pclk1_freq(&self) -> u32 {
+    pub fn pclk1_freq(&self) -> u32 {
         let apb1_prescaler = match self.cfgr.apb1_get_prescaler() {
             APBPrescaler::NotDivided => 1,
             APBPrescaler::DividedBy2 => 2,
@@ -191,6 +191,19 @@ impl RegisterBlock {
             APBPrescaler::DividedBy16 => 16,
         };
 
-        self.get_hclk_freq() / apb1_prescaler
+        self.hclk_freq() / apb1_prescaler
+    }
+
+    #[inline]
+    pub fn pclk2_freq(&self) -> u32 {
+        let apb2_prescaler = match self.cfgr.apb2_get_prescaler() {
+            APBPrescaler::NotDivided => 1,
+            APBPrescaler::DividedBy2 => 2,
+            APBPrescaler::DividedBy4 => 4,
+            APBPrescaler::DividedBy8 => 8,
+            APBPrescaler::DividedBy16 => 16,
+        };
+
+        self.hclk_freq() / apb2_prescaler
     }
 }

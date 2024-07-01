@@ -25,7 +25,7 @@ impl NVIC {
 }
 
 impl Deref for NVIC {
-    type Target = nvic::RegisterBlock;
+    type Target = nvic::NVIC;
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {

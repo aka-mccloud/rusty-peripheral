@@ -1,4 +1,6 @@
-pub struct RegisterBlock {
+use crate::peripheral;
+
+pub struct NVIC {
     /// Interrupt Set-Enable Register
     pub iser: [u32; 8],
 
@@ -32,18 +34,9 @@ pub struct RegisterBlock {
     pub stir: u32,
 }
 
-impl RegisterBlock {
-    pub fn get() -> &'static mut Self {
-        let addr = 0xe000_e100u32;
-
-        unsafe {
-            let ptr: *mut Self = addr as *mut Self;
-            &mut *ptr
-        }
-    }
-
+impl NVIC {
     pub fn irq_is_enabled(&mut self, irqn: usize) -> bool {
-        self.iser[irqn / 32] & (1 << irqn % 32) != 0
+        (self.iser[irqn / 32] & (1 << irqn % 32)) != 0
     }
 
     pub fn irq_enable(&mut self, irqn: usize) {
@@ -55,7 +48,7 @@ impl RegisterBlock {
     }
 
     pub fn irq_is_active(&mut self, irqn: usize) -> bool {
-        self.iabr[irqn / 32] & (1 << irqn % 32) != 0
+        (self.iabr[irqn / 32] & (1 << irqn % 32)) != 0
     }
 
     pub fn irq_set_pending(&mut self, irqn: usize) {
@@ -73,4 +66,8 @@ impl RegisterBlock {
     pub fn irq_trigger(&mut self, irqn: usize) {
         self.stir = irqn as _;
     }
+}
+
+pub fn nvic() -> &'static mut NVIC {
+    peripheral(0xe000_e100)
 }
