@@ -2,6 +2,7 @@
 
 use core::fmt::{ self };
 
+use irq::{state_mut, Status};
 use ::register::field::derive::RegisterField;
 
 use crate::{ peripheral, rcc::rcc, PeripheralClock };
@@ -9,6 +10,7 @@ use crate::{ peripheral, rcc::rcc, PeripheralClock };
 use self::register::*;
 
 mod register;
+mod irq;
 
 pub struct I2C {
     /// Control Register 1
@@ -42,19 +44,21 @@ pub struct I2C {
     fltr: FilterRegister,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     InitError(&'static str),
-    BusError(&'static str),
+    BusError,
     NoSlaveAddress(u8),
+    BusyError(&'static str),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::InitError(e) => f.write_fmt(format_args!("InitError: {}", e)),
-            Error::BusError(e) => f.write_fmt(format_args!("BusError: {}", e)),
+            Error::BusError => f.write_str("Bus Error"),
             Error::NoSlaveAddress(a) => f.write_fmt(format_args!("No Slave with address: {}", a)),
+            Error::BusyError(e) => f.write_fmt(format_args!("BusyError: {}", e)),
         }
     }
 }
@@ -126,7 +130,7 @@ impl I2C {
         self.cr1.generate_start_condition();
         while !(self.sr1.start_condition_is_generated() || self.sr1.is_bus_error_detected()) {}
         if self.sr1.is_bus_error_detected() {
-            return Err(Error::BusError("Misplaced Start condition"));
+            return Err(Error::BusError);
         }
 
         Ok(())
@@ -191,6 +195,29 @@ impl I2C {
         self.master_stop()
     }
 
+    pub fn master_write_data_begin(&mut self, addr: u8, data: &[u8]) -> Result<()> {
+        unsafe {
+            let state = &mut *state_mut(&self);
+            match state.status {
+                Status::Ready => Ok(()),
+                Status::BusyRx => Err(Error::BusyError("RX in progress")),
+                Status::BusyTx => Err(Error::BusyError("TX in progress")),
+                Status::Error(e) => Err(e),
+            }?;
+
+            state.addr = addr;
+            state.tx_buf = (data.as_ptr(), data.len());
+            state.status = Status::BusyTx;
+        }
+
+        self.cr1.generate_start_condition();
+        self.cr2.enable_buffer_interrupt();
+        self.cr2.enable_event_interrupt();
+        self.cr2.enable_error_interrupt();
+
+        Ok(())
+    }
+
     #[inline]
     pub fn master_read_bytes(&mut self, data: &mut [u8]) -> Result<()> {
         let len = data.len();
@@ -230,6 +257,29 @@ impl I2C {
         self.master_start()?;
         self.master_write_address(addr, true)?;
         self.master_read_bytes(data)
+    }
+
+    pub fn master_read_data_begin(&mut self, addr: u8, data: &mut [u8]) -> Result<()> {
+        unsafe {
+            let state = &mut *state_mut(&self);
+            match state.status {
+                Status::Ready => Ok(()),
+                Status::BusyRx => Err(Error::BusyError("RX in progress")),
+                Status::BusyTx => Err(Error::BusyError("TX in progress")),
+                Status::Error(e) => Err(e),
+            }?;
+
+            state.addr = addr;
+            state.rx_buf = (data.as_mut_ptr(), data.len());
+            state.status = Status::BusyRx;
+        }
+
+        self.cr1.generate_start_condition();
+        self.cr2.enable_buffer_interrupt();
+        self.cr2.enable_event_interrupt();
+        self.cr2.enable_error_interrupt();
+
+        Ok(())
     }
 }
 

@@ -16,6 +16,7 @@ pub(super) enum Status {
     Ready,
     BusyRx,
     BusyTx,
+    Error(Error)
 }
 
 pub(super) struct State {
@@ -34,8 +35,8 @@ impl State {
     }
 }
 
-pub(super) unsafe fn state_mut(spi: &USART) -> *mut State {
-    let ptr = spi as *const USART;
+pub(super) unsafe fn state_mut(usart: &USART) -> *mut State {
+    let ptr = usart as *const USART;
 
     match ptr as usize {
         0x4001_1000 => addr_of_mut!(USART1_STATE),
@@ -105,8 +106,9 @@ unsafe fn usart_irq_handler(usart: &mut USART, state: *mut State) {
         }
     }
 
-    if usart.cr3.is_error_interrupt_enabled() && usart.sr.is_overrun() {
-        // handle overrun error
+    if usart.cr3.is_error_interrupt_enabled() {
+        usart.cr3.disable_error_interrupt();
+
         match state.status {
             Status::BusyRx => {
                 usart.cr1.disable_rx_not_empty_interrupt();
@@ -119,7 +121,11 @@ unsafe fn usart_irq_handler(usart: &mut USART, state: *mut State) {
             _ => (),
         }
 
-        *state = State::new();
+        if usart.sr.is_overrun() {
+            state.status = Status::Error(Error::OverrunError);
+        } else if usart.sr.is_parity_error() {
+            state.status = Status::Error(Error::ParityError);
+        }
     }
 }
 

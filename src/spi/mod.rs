@@ -8,6 +8,8 @@ use crate::{ peripheral, rcc::rcc, PeripheralClock };
 
 use self::register::*;
 
+pub use self::register::{ BaudRate, ClockPhase, ClockPolarity, DataFrameFormat, Mode };
+
 mod register;
 mod irq;
 
@@ -34,10 +36,10 @@ pub struct SPI {
     txcrcr: CRCRegister,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     InitError(&'static str),
-    BusError(&'static str),
+    OverrunError,
     BusyError(&'static str),
 }
 
@@ -45,7 +47,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::InitError(e) => f.write_fmt(format_args!("InitError: {}", e)),
-            Error::BusError(e) => f.write_fmt(format_args!("BusError: {}", e)),
+            Error::OverrunError => f.write_str("Overrun Error"),
             Error::BusyError(e) => f.write_fmt(format_args!("BusyError: {}", e)),
         }
     }
@@ -76,9 +78,10 @@ impl SPI {
         cpha: ClockPhase,
         ssm: bool
     ) -> Result<()> {
-        self.disable();
+        self.reset();
 
         self.cr1.set_mode(mode);
+        self.cr1.set_internal_slave_select(mode == Mode::Master);
         match bus_config {
             BusConfiguration::FullDuplex => self.cr1.disable_bidirectional_mode(),
             BusConfiguration::HalfDuplex => self.cr1.enable_bidirectional_mode(),
@@ -94,13 +97,30 @@ impl SPI {
 
         if ssm {
             self.cr1.enable_software_slave_management();
+            self.cr2.enable_ss();
         } else {
             self.cr1.disable_software_slave_management();
+            self.cr2.disable_ss();
         }
 
         self.enable();
 
         Ok(())
+    }
+
+    pub fn is_busy(&self) -> bool {
+        self.sr.is_busy() | !(self.sr.tx_is_empty() || self.sr.rx_is_not_empty())
+    }
+
+    pub fn transmit(&mut self, word: u16) -> u16 {
+        self.dr.write_data(word);
+        while !self.sr.tx_is_empty() {}
+        while self.sr.is_busy() {}
+        while !self.sr.rx_is_not_empty() {}
+        let val = self.dr.read_data();
+        let _ = self.sr.get();
+
+        val
     }
 
     #[inline]
@@ -135,11 +155,12 @@ impl SPI {
     pub fn write_data_begin(&mut self, data: &[u8]) -> Result<()> {
         unsafe {
             let state = &mut *state_mut(&self);
-            (match state.status {
+            match state.status {
                 Status::Ready => Ok(()),
                 Status::BusyRx => Err(Error::BusyError("RX in progress")),
                 Status::BusyTx => Err(Error::BusyError("TX in progress")),
-            })?;
+                Status::Error(e) => Err(e),
+            }?;
 
             state.tx_buf = (data.as_ptr(), data.len());
             state.status = Status::BusyTx;
@@ -187,6 +208,7 @@ impl SPI {
                 Status::Ready => Ok(()),
                 Status::BusyRx => Err(Error::BusyError("RX in progress")),
                 Status::BusyTx => Err(Error::BusyError("TX in progress")),
+                Status::Error(e) => Err(e),
             }?;
 
             state.rx_buf = (data.as_mut_ptr(), data.len());

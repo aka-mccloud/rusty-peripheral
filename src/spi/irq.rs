@@ -14,6 +14,7 @@ pub(super) enum Status {
     Ready,
     BusyRx,
     BusyTx,
+    Error(Error)
 }
 
 pub(super) struct State {
@@ -36,12 +37,12 @@ pub(super) unsafe fn state_mut(spi: &SPI) -> *mut State {
     let ptr = spi as *const SPI;
 
     match ptr as usize {
-        0x4001_3000 => { addr_of_mut!(SPI1_STATE) }
-        0x4000_3800 => { addr_of_mut!(SPI2_STATE) }
-        0x4000_3c00 => { addr_of_mut!(SPI3_STATE) }
-        0x4001_3400 => { addr_of_mut!(SPI4_STATE) }
-        0x4001_5000 => { addr_of_mut!(SPI5_STATE) }
-        0x4001_5400 => { addr_of_mut!(SPI6_STATE) }
+        0x4001_3000 => addr_of_mut!(SPI1_STATE),
+        0x4000_3800 => addr_of_mut!(SPI2_STATE),
+        0x4000_3c00 => addr_of_mut!(SPI3_STATE),
+        0x4001_3400 => addr_of_mut!(SPI4_STATE),
+        0x4001_5000 => addr_of_mut!(SPI5_STATE),
+        0x4001_5400 => addr_of_mut!(SPI6_STATE),
         _ => panic!(),
     }
 }
@@ -93,6 +94,8 @@ unsafe fn spi_irq_handler(spi: &mut SPI, state: *mut State) {
 
     if spi.cr2.error_interrupt_is_enabled() && spi.sr.is_overrun() {
         // handle overrun error
+        spi.cr2.disable_error_interrupt();
+
         match state.status {
             Status::BusyRx => {
                 spi.cr2.disable_rx_not_empty_interrupt();
@@ -105,7 +108,7 @@ unsafe fn spi_irq_handler(spi: &mut SPI, state: *mut State) {
             _ => (),
         }
 
-        *state = State::new();
+        state.status = Status::Error(Error::OverrunError);
     }
 }
 

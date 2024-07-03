@@ -1,6 +1,6 @@
 use core::{ fmt, mem::size_of, ptr, slice };
 
-use irq::{state_mut, Status};
+use irq::{ state_mut, Status };
 
 use crate::{ peripheral, rcc::rcc, PeripheralClock };
 
@@ -35,7 +35,7 @@ pub struct USART {
     gptr: GuardTimeAndPrescalerRegister,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     InitError(&'static str),
     OverrunError,
@@ -187,6 +187,7 @@ impl USART {
                 Status::Ready => Ok(()),
                 Status::BusyRx => Err(Error::BusyError("RX in progress")),
                 Status::BusyTx => Err(Error::BusyError("TX in progress")),
+                Status::Error(e) => Err(e),
             })?;
 
             state.tx_buf = (data.as_ptr(), data.len());
@@ -237,11 +238,12 @@ impl USART {
     pub fn read_data_begin(&mut self, data: &mut [u8]) -> Result<()> {
         unsafe {
             let state = &mut *state_mut(&self);
-            match state.status {
+            (match state.status {
                 Status::Ready => Ok(()),
                 Status::BusyRx => Err(Error::BusyError("RX in progress")),
                 Status::BusyTx => Err(Error::BusyError("TX in progress")),
-            }?;
+                Status::Error(e) => Err(e),
+            })?;
 
             state.rx_buf = (data.as_mut_ptr(), data.len());
             state.status = Status::BusyRx;
@@ -340,6 +342,12 @@ impl PeripheralClock for USART {
             0x4000_7c00 => rcc().apb1enr.uart8_disable(),
             _ => panic!(),
         }
+    }
+}
+
+impl fmt::Write for USART {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.write_data(s.as_bytes()).map_err(|_| fmt::Error)
     }
 }
 
